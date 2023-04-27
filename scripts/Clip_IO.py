@@ -36,9 +36,13 @@ class Clip_IO(scripts.Script):
     def get_flat_embeddings(batch_chunks, clip) -> torch.Tensor:
         input_ids = []
         fixes = []
+        offset = 0
         for chunk in batch_chunks[0]:
             input_ids += chunk.tokens
+            for fix in chunk.fixes:
+                fix.offset += offset
             fixes += chunk.fixes
+            offset += len(chunk.tokens)
             pass
         clip.hijack.fixes = [fixes]
         input_ids_Tensor = torch.asarray([input_ids]).to(devices.device)
