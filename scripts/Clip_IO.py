@@ -6,6 +6,7 @@ import pandas
 
 from modules import scripts, script_callbacks, shared, devices
 from modules.shared import opts
+from modules.sd_hijack_clip import PromptChunkFix, PromptChunk
 
 class Clip_IO(scripts.Script):
     def __init__(self):
@@ -25,7 +26,7 @@ class Clip_IO(scripts.Script):
             pass
         pass
     
-    def get_chunks(prompt: str, clip):
+    def get_chunks(prompt: str, clip) -> PromptChunk:
         if opts.use_old_emphasis_implementation:
             raise NotImplementedError
             pass
@@ -33,14 +34,16 @@ class Clip_IO(scripts.Script):
         return batch_chunks
         pass
 
-    def get_flat_embeddings(batch_chunks, clip) -> torch.Tensor:
+    def get_flat_embeddings(batch_chunks: PromptChunk, clip) -> torch.Tensor:
         input_ids = []
         fixes = []
         offset = 0
         for chunk in batch_chunks[0]:
             input_ids += chunk.tokens
-            for fix in chunk.fixes:
-                fix.offset += offset
+            for i, fix in enumerate(chunk.fixes):
+                fix: PromptChunkFix
+                fix = PromptChunkFix(fix.offset + offset, fix.embedding)
+                chunk.fixes[i] = fix
             fixes += chunk.fixes
             offset += len(chunk.tokens)
             pass
