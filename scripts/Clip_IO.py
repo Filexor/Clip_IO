@@ -57,7 +57,7 @@ class Clip_IO(scripts.Script):
         dir = os.path.dirname(filename)
         if not os.path.exists(dir): os.makedirs(dir)
         if not filename.endswith(".pt"): filename += ".pt"
-        torch.save(embeddings.transpose() if transpose else embeddings, filename)
+        torch.save(embeddings.t() if transpose else embeddings, filename)
         pass
 
     def on_save_embeddings_as_csv(prompt: str, filename: str, transpose: bool):
@@ -68,7 +68,7 @@ class Clip_IO(scripts.Script):
         dir = os.path.dirname(filename)
         if not os.path.exists(dir): os.makedirs(dir)
         if not filename.endswith(".csv"): filename += ".csv"
-        embeddings_numpy = embeddings[0].transpose().to("cpu").numpy() if transpose else embeddings[0].to("cpu").numpy()
+        embeddings_numpy = embeddings[0].t().to("cpu").numpy() if transpose else embeddings[0].to("cpu").numpy()
         embeddings_dataframe = pandas.DataFrame(embeddings_numpy)
         embeddings_dataframe.to_csv(filename)
         pass
