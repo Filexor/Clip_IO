@@ -73,7 +73,7 @@ class Clip_IO(scripts.Script):
         if not filename.endswith(".csv"): filename += ".csv"
         embeddings_numpy = embeddings[0].t().to("cpu").numpy() if transpose else embeddings[0].to("cpu").numpy()
         embeddings_dataframe = pandas.DataFrame(embeddings_numpy)
-        embeddings_dataframe.to_csv(filename)
+        embeddings_dataframe.to_csv(filename, float_format = "%.8e")
         pass
 
     def on_save_conditioning(prompt: str, filename: str):
