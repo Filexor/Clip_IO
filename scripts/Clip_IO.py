@@ -1,4 +1,4 @@
-import os, csv, warnings
+import os, csv, warnings, datetime
 
 import gradio
 import torch
@@ -27,8 +27,9 @@ class Clip_IO(scripts.Script):
     positive_filenames = []
     negative_filenames = []
     conditioning_cache = {}
-    negative_exist = False
     positive_exist = False
+    negative_exist = False
+    
     evacuate_get_learned_conditioning = None
     evacuate_get_multicond_learned_conditioning = None
     evacuate_get_conds_with_caching = None
@@ -445,7 +446,7 @@ class Clip_IO(scripts.Script):
         return batch_chunks
         pass
 
-    def get_flat_embeddings(batch_chunks: PromptChunk, clip: FrozenCLIPEmbedderWithCustomWordsBase) -> torch.Tensor:
+    def get_flat_embeddings(batch_chunks: PromptChunk, clip: FrozenCLIPEmbedderWithCustomWordsBase) -> tuple[torch.Tensor, list[str]]:
         input_ids = []
         fixes = []
         offset = 0
@@ -460,71 +461,92 @@ class Clip_IO(scripts.Script):
             pass
         clip.hijack.fixes = [fixes]
         input_ids_Tensor = torch.asarray([input_ids]).to(devices.device)
-        return clip.wrapped.transformer.text_model.embeddings.token_embedding(input_ids_Tensor)
+
+        tokens = [clip.wrapped.tokenizer.decoder.get(input_id) for input_id in input_ids]
+        for fix in fixes:
+            tokens[fix.offset + 1] = fix.embedding.name
+            for i in range(1, fix.embedding.vec.shape[0]):
+                tokens[fix.offset + 1 + i] = ""
+                pass
+            pass
+
+        return clip.wrapped.transformer.text_model.embeddings.token_embedding(input_ids_Tensor), tokens
         pass
 
-    def on_save_embeddings_as_pt(prompt: str, filename: str, transpose: bool):
-        clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
-        batch_chunks = Clip_IO.get_chunks(prompt, clip)
-        embeddings: torch.Tensor = Clip_IO.get_flat_embeddings(batch_chunks, clip)
-
-        filename = os.path.realpath(filename)
-        dir = os.path.dirname(filename)
-        if not os.path.exists(dir): os.makedirs(dir)
-        if not filename.endswith(".pt"): filename += ".pt"
-        torch.save(embeddings.t() if transpose else embeddings, filename)
-        pass
-
-    def on_save_embeddings_as_csv(prompt: str, filename: str, transpose: bool):
-        clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
-        batch_chunks = Clip_IO.get_chunks(prompt, clip)
-        embeddings: torch.Tensor = Clip_IO.get_flat_embeddings(batch_chunks, clip)
-
-        filename = os.path.realpath(filename)
-        dir = os.path.dirname(filename)
-        if not os.path.exists(dir): os.makedirs(dir)
-        if not filename.endswith(".csv"): filename += ".csv"
-        embeddings_numpy = embeddings[0].t().to("cpu").numpy() if transpose else embeddings[0].to("cpu").numpy()
-        embeddings_dataframe = pandas.DataFrame(embeddings_numpy)
-        embeddings_dataframe.to_csv(filename, float_format = "%.8e")
-        pass
-
-    def on_save_conditioning_as_pt(prompt: str, filename: str, transpose: bool, no_emphasis: bool, no_norm: bool):
-        with devices.autocast():
+    def on_save_embeddings_as_pt(prompt: str, filename: str, overwrite: bool):
+        try:
             clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
             batch_chunks = Clip_IO.get_chunks(prompt, clip)
-            chunk_count = max([len(x) for x in batch_chunks])
-            zs = []
-            for i in range(chunk_count):
-                batch_chunk = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks]
-                remade_batch_tokens = [x.tokens for x in batch_chunk]
-                tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
-                clip.hijack.fixes = [x.fixes for x in batch_chunk]
+            embeddings: torch.Tensor = Clip_IO.get_flat_embeddings(batch_chunks, clip)
 
-                if clip.id_end != clip.id_pad:
-                    for batch_pos in range(len(remade_batch_tokens)):
-                        index = remade_batch_tokens[batch_pos].index(clip.id_end)
-                        tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
-                
-                z = clip.encode_with_transformers(tokens)
-                if not no_emphasis:
-                    batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
-                    original_mean = z.mean()
-                    z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape)
-                    new_mean = z.mean()
-                    z = z * (original_mean / new_mean) if not no_norm else z
-                zs.append(z[0])
-            conditioning = torch.hstack(zs)
-
+            filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
             filename = os.path.realpath(filename)
             dir = os.path.dirname(filename)
             if not os.path.exists(dir): os.makedirs(dir)
             if not filename.endswith(".pt"): filename += ".pt"
-            torch.save(conditioning.t() if transpose else conditioning, filename)
+            if os.path.exists(filename):
+                raise FileExistsError()
+                pass
+            torch.save(embeddings, filename)
             pass
+        except FileExistsError as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. File "{filename}" already exists. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        except Exception as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        return f'File {filename} is successfully saved. {datetime.datetime.now().isoformat()}'
         pass
 
-    def on_save_conditioning_as_csv(prompt: str, filename: str, transpose: bool, no_emphasis: bool, no_norm: bool):
+    def on_save_embeddings_as_csv(prompt: str, filename: str, transpose: bool, add_token: bool, overwrite: bool):
+        try:
+            clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
+            batch_chunks = Clip_IO.get_chunks(prompt, clip)
+            embeddings, tokens = Clip_IO.get_flat_embeddings(batch_chunks, clip)
+
+            embeddings: list[list[str]] = embeddings[0].tolist()
+            width = len(embeddings[0])
+            for i, row in enumerate(embeddings):
+                row.insert(0, str(i))
+                if add_token:
+                    row.insert(0, tokens[i])
+                    pass
+                pass
+            row_first = list(range(width))
+            row_first.insert(0, "embeddingsT" if transpose else "embeddings")
+            if add_token:
+                    row_first.insert(0, "")
+                    pass
+            embeddings.insert(0, row_first)
+            if transpose:
+                embeddings = [list(x) for x in zip(*embeddings)]
+                pass
+
+            filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
+            filename = os.path.realpath(filename)
+            dir = os.path.dirname(filename)
+            if not os.path.exists(dir): os.makedirs(dir)
+            if not filename.endswith(".csv"): filename += ".csv"
+            
+            with open(filename, "wt" if overwrite else "xt") as file:
+                writer = csv.writer(file, lineterminator = "\n")
+                writer.writerows(embeddings)
+                pass
+            pass
+        except FileExistsError as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. File "{filename}" already exists. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        except Exception as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        return f'File {filename} is successfully saved. {datetime.datetime.now().isoformat()}'
+        pass
+
+    def on_save_conditioning_as_pt(prompt: str, filename: str, no_emphasis: bool, no_norm: bool, overwrite: bool):
         with devices.autocast():
             clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
             batch_chunks = Clip_IO.get_chunks(prompt, clip)
@@ -551,6 +573,43 @@ class Clip_IO(scripts.Script):
                 zs.append(z[0])
             conditioning = torch.hstack(zs)
 
+            filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
+            filename = os.path.realpath(filename)
+            dir = os.path.dirname(filename)
+            if not os.path.exists(dir): os.makedirs(dir)
+            if not filename.endswith(".pt"): filename += ".pt"
+            torch.save(conditioning, filename)
+            pass
+        pass
+
+    def on_save_conditioning_as_csv(prompt: str, filename: str, transpose: bool, no_emphasis: bool, no_norm: bool, add_token: bool, overwrite: bool):
+        with devices.autocast():
+            clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
+            batch_chunks = Clip_IO.get_chunks(prompt, clip)
+            chunk_count = max([len(x) for x in batch_chunks])
+            zs = []
+            for i in range(chunk_count):
+                batch_chunk = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks]
+                remade_batch_tokens = [x.tokens for x in batch_chunk]
+                tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
+                clip.hijack.fixes = [x.fixes for x in batch_chunk]
+
+                if clip.id_end != clip.id_pad:
+                    for batch_pos in range(len(remade_batch_tokens)):
+                        index = remade_batch_tokens[batch_pos].index(clip.id_end)
+                        tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
+                
+                z = clip.encode_with_transformers(tokens)
+                if not no_emphasis:
+                    batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
+                    original_mean = z.mean()
+                    z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape)
+                    new_mean = z.mean()
+                    z = z * (original_mean / new_mean) if not no_norm else z
+                zs.append(z[0])
+            conditioning = torch.hstack(zs)
+
+            filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
             filename = os.path.realpath(filename)
             dir = os.path.dirname(filename)
             if not os.path.exists(dir): os.makedirs(dir)
@@ -565,23 +624,24 @@ class Clip_IO(scripts.Script):
         with gradio.Blocks() as tab:
             prompt = gradio.TextArea(max_lines = 256, label = "Prompt")
             with gradio.Row():
-                output_embeddings_name = gradio.Textbox(value = r"outputs\embeddings\out_emb", label = "Output embeddings name")
-                output_embeddings_transpose = gradio.Checkbox(value = False, label = "Transpose matrix")
-                output_embeddings_as_pt_button = gradio.Button("Save embeddings as .pt")
-                output_embeddings_as_csv_button = gradio.Button("Save embeddings as .csv")
+                output_transpose = gradio.Checkbox(value = True, label = "Transpose matrix")
+                output_ignore_emphasis = gradio.Checkbox(value = False, label = "Ignore emphasis")
+                output_bypass_conditioning_normalization = gradio.Checkbox(value = False, label = "Bypass conditioning normalization")
+                output_token_string = gradio.Checkbox(value = True, label = "Add token strings")
+                output_overwrite = gradio.Checkbox(value = False, label = "Overwrite")
                 pass
             with gradio.Row():
-                output_conditioning_name = gradio.Textbox(value = r"outputs\embeddings\out_cond", label = "Output conditioning name")
-                output_conditioning_transpose = gradio.Checkbox(value = False, label = "Transpose matrix")
-                output_conditioning_ignore_emphasis = gradio.Checkbox(value = False, label = "Ignore emphasis")
-                output_conditioning_bypass_conditioning_normalization = gradio.Checkbox(value = False, label = "Bypass conditioning normalization")
-                output_conditioning_button_as_pt = gradio.Button("Save conditioning as .pt")
-                output_conditioning_button_as_csv = gradio.Button("Save conditioning as .csv")
+                output_name = gradio.Textbox(value = r"output", label = "Output name")
+                output_embeddings_as_pt = gradio.Button("Save embeddings as .pt")
+                output_embeddings_as_csv = gradio.Button("Save embeddings as .csv")
+                output_conditioning_as_pt = gradio.Button("Save conditioning as .pt")
+                output_conditioning_as_csv = gradio.Button("Save conditioning as .csv")
                 pass
-            output_embeddings_as_pt_button.click(Clip_IO.on_save_embeddings_as_pt, [prompt, output_embeddings_name, output_embeddings_transpose])
-            output_embeddings_as_csv_button.click(Clip_IO.on_save_embeddings_as_csv, [prompt, output_embeddings_name, output_embeddings_transpose])
-            output_conditioning_button_as_pt.click(Clip_IO.on_save_conditioning_as_pt, [prompt, output_conditioning_name, output_conditioning_transpose, output_conditioning_ignore_emphasis, output_conditioning_bypass_conditioning_normalization])
-            output_conditioning_button_as_csv.click(Clip_IO.on_save_conditioning_as_csv, [prompt, output_conditioning_name, output_conditioning_transpose, output_conditioning_ignore_emphasis, output_conditioning_bypass_conditioning_normalization])
+            output_notification = gradio.HTML()
+            output_embeddings_as_pt.click(Clip_IO.on_save_embeddings_as_pt, [prompt, output_name, output_overwrite], [output_notification])
+            output_embeddings_as_csv.click(Clip_IO.on_save_embeddings_as_csv, [prompt, output_name, output_transpose, output_token_string, output_overwrite], [output_notification])
+            output_conditioning_as_pt.click(Clip_IO.on_save_conditioning_as_pt, [prompt, output_name, output_ignore_emphasis, output_bypass_conditioning_normalization, output_overwrite], [output_notification])
+            output_conditioning_as_csv.click(Clip_IO.on_save_conditioning_as_csv, [prompt, output_name, output_transpose, output_ignore_emphasis, output_bypass_conditioning_normalization, output_token_string, output_overwrite], [output_notification])
             pass
         return [(tab, "Clip Output", "Clip_Output")]
         pass
