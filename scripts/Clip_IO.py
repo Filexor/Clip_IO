@@ -484,7 +484,7 @@ class Clip_IO(scripts.Script):
             dir = os.path.dirname(filename)
             if not os.path.exists(dir): os.makedirs(dir)
             if not filename.endswith(".pt"): filename += ".pt"
-            if os.path.exists(filename):
+            if os.path.exists(filename) and not overwrite:
                 raise FileExistsError()
                 pass
             torch.save(embeddings, filename)
@@ -547,77 +547,122 @@ class Clip_IO(scripts.Script):
         pass
 
     def on_save_conditioning_as_pt(prompt: str, filename: str, no_emphasis: bool, no_norm: bool, overwrite: bool):
-        with devices.autocast():
-            clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
-            batch_chunks = Clip_IO.get_chunks(prompt, clip)
-            chunk_count = max([len(x) for x in batch_chunks])
-            zs = []
-            for i in range(chunk_count):
-                batch_chunk = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks]
-                remade_batch_tokens = [x.tokens for x in batch_chunk]
-                tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
-                clip.hijack.fixes = [x.fixes for x in batch_chunk]
+        try:
+            with devices.autocast():
+                clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
+                batch_chunks = Clip_IO.get_chunks(prompt, clip)
+                chunk_count = max([len(x) for x in batch_chunks])
+                zs = []
+                for i in range(chunk_count):
+                    batch_chunk = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks]
+                    remade_batch_tokens = [x.tokens for x in batch_chunk]
+                    tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
+                    clip.hijack.fixes = [x.fixes for x in batch_chunk]
 
-                if clip.id_end != clip.id_pad:
-                    for batch_pos in range(len(remade_batch_tokens)):
-                        index = remade_batch_tokens[batch_pos].index(clip.id_end)
-                        tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
-                
-                z = clip.encode_with_transformers(tokens)
-                if not no_emphasis:
-                    batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
-                    original_mean = z.mean()
-                    z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape)
-                    new_mean = z.mean()
-                    z = z * (original_mean / new_mean) if not no_norm else z
-                zs.append(z[0])
-            conditioning = torch.hstack(zs)
+                    if clip.id_end != clip.id_pad:
+                        for batch_pos in range(len(remade_batch_tokens)):
+                            index = remade_batch_tokens[batch_pos].index(clip.id_end)
+                            tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
+                    
+                    z = clip.encode_with_transformers(tokens)
+                    if not no_emphasis:
+                        batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
+                        original_mean = z.mean()
+                        z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape)
+                        new_mean = z.mean()
+                        z = z * (original_mean / new_mean) if not no_norm else z
+                    zs.append(z[0])
+                conditioning = torch.hstack(zs)
 
-            filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
-            filename = os.path.realpath(filename)
-            dir = os.path.dirname(filename)
-            if not os.path.exists(dir): os.makedirs(dir)
-            if not filename.endswith(".pt"): filename += ".pt"
-            torch.save(conditioning, filename)
+                filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
+                filename = os.path.realpath(filename)
+                dir = os.path.dirname(filename)
+                if not os.path.exists(dir): os.makedirs(dir)
+                if not filename.endswith(".pt"): filename += ".pt"
+                if os.path.exists(filename) and not overwrite:
+                    raise FileExistsError()
+                    pass
+                torch.save(conditioning, filename)
             pass
+        except FileExistsError as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. File "{filename}" already exists. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        except Exception as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        return f'File {filename} is successfully saved. {datetime.datetime.now().isoformat()}'
         pass
 
     def on_save_conditioning_as_csv(prompt: str, filename: str, transpose: bool, no_emphasis: bool, no_norm: bool, add_token: bool, overwrite: bool):
-        with devices.autocast():
-            clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
-            batch_chunks = Clip_IO.get_chunks(prompt, clip)
-            chunk_count = max([len(x) for x in batch_chunks])
-            zs = []
-            for i in range(chunk_count):
-                batch_chunk = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks]
-                remade_batch_tokens = [x.tokens for x in batch_chunk]
-                tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
-                clip.hijack.fixes = [x.fixes for x in batch_chunk]
+        try:
+            with devices.autocast():
+                clip: FrozenCLIPEmbedderWithCustomWordsBase = shared.sd_model.cond_stage_model
+                batch_chunks = Clip_IO.get_chunks(prompt, clip)
+                _, token_list = Clip_IO.get_flat_embeddings(batch_chunks, clip)
+                chunk_count = max([len(x) for x in batch_chunks])
+                zs = []
+                for i in range(chunk_count):
+                    batch_chunk = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks]
+                    remade_batch_tokens = [x.tokens for x in batch_chunk]
+                    tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
+                    clip.hijack.fixes = [x.fixes for x in batch_chunk]
 
-                if clip.id_end != clip.id_pad:
-                    for batch_pos in range(len(remade_batch_tokens)):
-                        index = remade_batch_tokens[batch_pos].index(clip.id_end)
-                        tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
+                    if clip.id_end != clip.id_pad:
+                        for batch_pos in range(len(remade_batch_tokens)):
+                            index = remade_batch_tokens[batch_pos].index(clip.id_end)
+                            tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
+                    
+                    z = clip.encode_with_transformers(tokens)
+                    if not no_emphasis:
+                        batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
+                        original_mean = z.mean()
+                        z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape)
+                        new_mean = z.mean()
+                        z = z * (original_mean / new_mean) if not no_norm else z
+                    zs.append(z[0])
+                conditioning = torch.hstack(zs)
+
+                conditioning: list[list[str]] = conditioning.tolist()
+                width = len(conditioning[0])
+                for i, row in enumerate(conditioning):
+                    row.insert(0, str(i))
+                    if add_token:
+                        row.insert(0, token_list[i])
+                        pass
+                    pass
+                row_first = list(range(width))
+                row_first.insert(0, "conditioningT" if transpose else "conditioning")
+                if add_token:
+                        row_first.insert(0, "")
+                        pass
+                conditioning.insert(0, row_first)
+                if transpose:
+                    conditioning = [list(x) for x in zip(*conditioning)]
+                    pass
+
+                filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
+                filename = os.path.realpath(filename)
+                dir = os.path.dirname(filename)
+                if not os.path.exists(dir): os.makedirs(dir)
+                if not filename.endswith(".csv"): filename += ".csv"
                 
-                z = clip.encode_with_transformers(tokens)
-                if not no_emphasis:
-                    batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
-                    original_mean = z.mean()
-                    z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape)
-                    new_mean = z.mean()
-                    z = z * (original_mean / new_mean) if not no_norm else z
-                zs.append(z[0])
-            conditioning = torch.hstack(zs)
-
-            filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
-            filename = os.path.realpath(filename)
-            dir = os.path.dirname(filename)
-            if not os.path.exists(dir): os.makedirs(dir)
-            if not filename.endswith(".csv"): filename += ".csv"
-            conditioning_numpy = conditioning.t().to("cpu").numpy() if transpose else conditioning.to("cpu").numpy()
-            conditioning_dataframe = pandas.DataFrame(conditioning_numpy)
-            conditioning_dataframe.to_csv(filename, float_format = "%.8e")
+                with open(filename, "wt" if overwrite else "xt") as file:
+                    writer = csv.writer(file, lineterminator = "\n")
+                    writer.writerows(conditioning)
+                    pass
+                pass
             pass
+        except FileExistsError as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. File "{filename}" already exists. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        except Exception as e:
+            print(repr(e))
+            return f'<span style="color: red">Saving failed. {datetime.datetime.now().isoformat()}</span>'
+            pass
+        return f'File {filename} is successfully saved. {datetime.datetime.now().isoformat()}'
         pass
 
     def tab():
