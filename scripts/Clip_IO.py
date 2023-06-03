@@ -703,7 +703,7 @@ class Clip_IO(scripts.Script):
                         new_mean = z.mean()
                         z = z * (original_mean / new_mean) if not no_norm else z
                     zs.append(z[0])
-                conditioning = torch.hstack(zs)
+                conditioning = torch.vstack(zs)
 
                 filename = os.path.join(os.path.dirname(__file__), "../conditioning", filename)
                 filename = os.path.realpath(filename)
@@ -753,7 +753,7 @@ class Clip_IO(scripts.Script):
                         new_mean = z.mean()
                         z = z * (original_mean / new_mean) if not no_norm else z
                     zs.append(z[0])
-                conditioning = torch.hstack(zs)
+                conditioning = torch.vstack(zs)
 
                 conditioning: list[list[str]] = conditioning.tolist()
                 width = len(conditioning[0])
