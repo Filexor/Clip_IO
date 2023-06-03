@@ -3,6 +3,23 @@ Clip I/O is extension of Stable diffusion Web UI.
 This extension allows you to investigate embeddings/conditioning and feed conditioning to Stable Diffusion.  
 ## Clip Output
 Clip Output allows you to export embeddings/conditioning whitch processed by Clip for investigation.  
+### Options
+#### Transpose matrix
+Swap column (token axis) and row (dimension axis).   
+#### Don't add bos / eos / pad tokens
+In default settings, automatically append pad (padding) tokens to make chunk 75 tokens long then prepend bos (start of text) token and append eos (end of text) token.  
+This option disables that behavior.
+#### Ignore emphasis
+This option makes multiplier of all tokens to 1.0 .  
+Note that unlike disabling Settings -> Stable Diffusion -> Enable emphasis, emphasis syntax is still parsed.  
+#### Bypass conditioning normalization
+In default settings, mean average of emphasized conditioning will be adjusted to match mean average of pre-emphasized conditioning.  
+This option disabled that behavior.  
+#### Add token strings
+Add token string for readability.  
+Location of token string is affected by "Transpose matrix" option.  
+#### Overwrite
+Overwrite pre-existing file with same name as Output name.
 ## Clip Input
 Clip Input is, in spite of its name, bypasses Clip and allows you to feed your conditioning to Stable Diffusion model.  
 This is useful not just for investigation, but using special conditioning which is impossible with using Clip.  
