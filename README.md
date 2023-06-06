@@ -36,16 +36,16 @@ If filename has space, you can enclose with single double-quotation or single si
 You can include prompt which to be processed by Clip, by enclosing prompt with triple double-quotation or triple single-quotation.  
 After gathering all conditionings, these conditionings will be concaterated.  
 ### Syntax for "Directive" mode
-**NOTE: Currently, because of syntax mess, "Directive" mode does not support Prompt editing and Alternating words.**
+**NOTE: Currently, because of syntax mess, "Directive" mode does not support Prompt editing and Alternating words.**  
 In addition of "Simple" mode syntax, "Directive" mode supportes inline directives.  
-The syntax of inline directive is:
-?`DirectiveName`(`DirectiveInner`) or
-?`DirectiveName`_`DirectiveOrder`(`DirectiveInner`)
+The syntax of inline directive is:  
+?`DirectiveName`(`DirectiveInner`) or  
+?`DirectiveName`_`DirectiveOrder`(`DirectiveInner`)  
 "DirectiveName" is name of directive such as "eval" or "exec" (case-insensitive).  
 "DirectiveOrder" is order of directive.
 Larger order makes processing directive later.
 If directives with same order exists, these directives will be processed from left to right.
-If "DirectiveOrder" is absent, it will be treated as order is 0.
+If "DirectiveOrder" is absent, it will be treated as order is 0.  
 #### Directives
 ##### eval
 "eval" does component-wise python's eval to conditioning.  
