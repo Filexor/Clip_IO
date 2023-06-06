@@ -48,18 +48,18 @@ If directives with same order exists, these directives will be processed from le
 If "DirectiveOrder" is absent, it will be treated as order is 0.
 #### Directives
 ##### eval
-"eval" does component-wise python's eval to conditioning.
-Local objects for eval are:
-i: torch.Tensor : input conditioning
-o: torch.Tensor : output conditioning
-t: int : 0th dimension (token-wise) of index of input conditioning
-d: int : 1st dimension (dimension-wise) of index of input conditioning
-torch module and all objects in math module
+"eval" does component-wise python's eval to conditioning.  
+Local objects for eval are:  
+i: torch.Tensor : input conditioning  
+o: torch.Tensor : output conditioning  
+t: int : 0th dimension (token-wise) of index of input conditioning  
+d: int : 1st dimension (dimension-wise) of index of input conditioning  
+torch module and all objects in math module  
 ##### exec
-"exec" does component-wise python's exec.
-Local objects for exec are:
-i: torch.Tensor : input conditioning
-o: torch.Tensor : output conditioning
-t: int : 0th dimension (token-wise) of index of input conditioning
-d: int : 1st dimension (dimension-wise) of index of input conditioning
-torch module and all objects in math module
+"exec" does component-wise python's exec.  
+Local objects for exec are:  
+i: torch.Tensor : input conditioning  
+o: torch.Tensor : output conditioning  
+t: int : 0th dimension (token-wise) of index of input conditioning  
+d: int : 1st dimension (dimension-wise) of index of input conditioning  
+torch module and all objects in math module  
