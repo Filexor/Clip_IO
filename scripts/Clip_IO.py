@@ -295,7 +295,7 @@ class Clip_IO(scripts.Script):
                     o = i
                     pass
                 finally:
-                    i = o.clone()
+                    i = local["o"].clone()
                 pass
             else:
                 warnings.warn(f'Directive "{dir.name}" does not exist.')
