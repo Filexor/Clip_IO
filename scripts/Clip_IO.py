@@ -164,12 +164,7 @@ class Clip_IO(scripts.Script):
                 raise TypeError()
                 pass
             if self.order == other.order:
-                if self.Names[self.name] == self.Names[other.name]:
-                    return True
-                    pass
-                else:
-                    return self.Names[self.name] < self.Names[other.name]
-                    pass
+                return True
                 pass
             else:
                 return self.order < other.order
