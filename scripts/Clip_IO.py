@@ -301,7 +301,7 @@ class Clip_IO(scripts.Script):
                 warnings.warn(f'Directive "{dir.name}" does not exist.')
                 pass
             pass
-        cond = o
+        cond = i
 
         if cond is not None and cond.shape[0] > 0 and (cond.shape[1] == 768 or cond.shape[1] == 1024):
             return cond.to(devices.device)
