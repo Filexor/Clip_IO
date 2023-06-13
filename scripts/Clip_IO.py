@@ -367,7 +367,7 @@ class Clip_IO(scripts.Script):
 
             cond_schedule = []
             for i, (end_at_step, text) in enumerate(prompt_schedule):
-                cond_schedule.append(prompt_parser.ScheduledPromptConditioning(end_at_step, conds[i]))
+                cond_schedule.append(prompt_parser.ScheduledPromptConditioning(end_at_step, conds[i].to(devices.device)))
 
             cache[prompt] = cond_schedule
             res.append(cond_schedule)
