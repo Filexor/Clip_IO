@@ -714,24 +714,26 @@ class Clip_IO(scripts.Script):
 
             batch_chunks.append(chunks)
 
-        # We have to ensure all chunk in batch_chunks have same length.
-        # If not, fill with padding token and raise warning.
-        max_length = -1
-        warned = False
-        for chunks in batch_chunks:
-            for chunk in chunks:
-                if max_length != -1 and max_length != len(chunk.tokens) and not warned:
-                    warnings.warn("All chunk doesn't have same length. For processing, we'll fill with padding token to match same length.")
-                    warned = True
+        if False:
+            # We have to ensure all chunk in batch_chunks have same length.
+            # If not, fill with padding token and raise warning.
+            max_length = -1
+            warned = False
+            for chunks in batch_chunks:
+                for chunk in chunks:
+                    if max_length != -1 and max_length != len(chunk.tokens) and not warned:
+                        warnings.warn("All chunk doesn't have same length. For processing, we'll fill with padding token to match same length.")
+                        warned = True
+                        pass
+                    max_length = max(max_length, len(chunk.tokens))
                     pass
-                max_length = max(max_length, len(chunk.tokens))
                 pass
-            pass
 
-        for chunks in batch_chunks:
-            for chunk in chunks:
-                chunk.tokens += [clip.id_pad] * max(max_length - len(chunk.tokens), 0)
-                chunk.multipliers += [1.0] * max(max_length - len(chunk.multipliers), 0)
+            for chunks in batch_chunks:
+                for chunk in chunks:
+                    chunk.tokens += [clip.id_pad] * max(max_length - len(chunk.tokens), 0)
+                    chunk.multipliers += [1.0] * max(max_length - len(chunk.multipliers), 0)
+                    pass
                 pass
             pass
 
