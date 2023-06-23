@@ -52,6 +52,8 @@ If "DirectiveOrder" is absent, it will be treated as order is 0.
 Local objects for eval are:  
 i: torch.Tensor : input conditioning  
 o: torch.Tensor : output conditioning  
+c: dict : dict for carrying over
+p: modules.processing.StableDiffusionProcessing : [See source code of Stable diffusion Web UI.](https://github.com/AUTOMATIC1111/stable-diffusion-webui/blob/baf6946e06249c5af9851c60171692c44ef633e0/modules/processing.py#L105)
 t: int : 0th dimension (token-wise) of index of input conditioning  
 d: int : 1st dimension (dimension-wise) of index of input conditioning  
 torch module and all objects in math module  
@@ -60,6 +62,6 @@ torch module and all objects in math module
 Local objects for exec are:  
 i: torch.Tensor : input conditioning  
 o: torch.Tensor : output conditioning  
-t: int : 0th dimension (token-wise) of index of input conditioning  
-d: int : 1st dimension (dimension-wise) of index of input conditioning  
+c: dict : dict for carrying over
+p: modules.processing.StableDiffusionProcessing : [See source code of Stable diffusion Web UI.](https://github.com/AUTOMATIC1111/stable-diffusion-webui/blob/baf6946e06249c5af9851c60171692c44ef633e0/modules/processing.py#L105)
 torch module and all objects in math module  

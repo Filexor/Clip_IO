@@ -172,7 +172,7 @@ class Clip_IO(scripts.Script):
             pass
         pass
 
-    def get_cond_directive(model, input: str, is_negative: bool) -> torch.Tensor | None:
+    def get_cond_directive(model, input: str, is_negative: bool, p: processing.StableDiffusionProcessing) -> torch.Tensor | None:
         conds: list[torch.tensor] = []
         dirs: list[Clip_IO.Directive] = []
         class Process(lark.Transformer):
@@ -268,13 +268,14 @@ class Clip_IO(scripts.Script):
         Process().transform(lark.Lark(Clip_IO.syntax_directive).parse(input))
         i = torch.vstack(conds)
         o = i.clone()
+        c = {}
         dirs.sort()
         for dir in dirs:
             if dir.name == "eval":
                 try:
                     for t in range(i.shape[0]):
                         for d in range(i.shape[1]):
-                            local = {"i": i, "o": o, "t": t, "d": d, "torch": torch.__dict__} | math.__dict__
+                            local = {"i": i, "o": o, "c": c, "p": p, "t": t, "d": d, "torch": torch.__dict__} | math.__dict__
                             o[t, d] = eval(dir.inner, None, local)
                             pass
                         pass
@@ -288,7 +289,7 @@ class Clip_IO(scripts.Script):
                 pass
             elif dir.name == "exec":
                 try:
-                    local = {"i": i, "o": o, "torch": torch.__dict__} | math.__dict__
+                    local = {"i": i, "o": o, "c": c, "p": p, "torch": torch.__dict__} | math.__dict__
                     exec(dir.inner, None, local)
                 except Exception as e:
                     print(repr(e))
@@ -312,7 +313,7 @@ class Clip_IO(scripts.Script):
             pass
         pass
 
-    def my_get_learned_conditioning(model, prompts, steps, is_negative = True):
+    def my_get_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing, is_negative = True):
         """converts a list of prompts into a list of prompt schedules - each schedule is a list of ScheduledPromptConditioning, specifying the comdition (cond),
         and the sampling step at which this condition is to be replaced by the next one.
 
@@ -358,7 +359,7 @@ class Clip_IO(scripts.Script):
             elif Clip_IO.enabled and (Clip_IO.mode_positive == "Directive" and not is_negative or Clip_IO.mode_negative == "Directive" and is_negative):
                 conds = []
                 for text in texts:
-                    conds.append(Clip_IO.get_cond_directive(model, text, is_negative))
+                    conds.append(Clip_IO.get_cond_directive(model, text, is_negative, p))
                     pass
                 pass
             else:
@@ -375,7 +376,7 @@ class Clip_IO(scripts.Script):
         return res
         pass
 
-    def my_get_multicond_learned_conditioning(model, prompts, steps) -> prompt_parser.MulticondLearnedConditioning:
+    def my_get_multicond_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing) -> prompt_parser.MulticondLearnedConditioning:
         """same as get_learned_conditioning, but returns a list of ScheduledPromptConditioning along with the weight objects for each prompt.
         For each prompt, the list is obtained by splitting the prompt using the AND separator.
 
@@ -384,13 +385,33 @@ class Clip_IO(scripts.Script):
 
         res_indexes, prompt_flat_list, prompt_indexes = prompt_parser.get_multicond_prompt_list(prompts)
 
-        learned_conditioning = prompt_parser.get_learned_conditioning(model, prompt_flat_list, steps, is_negative = False)
+        learned_conditioning = prompt_parser.get_learned_conditioning(model, prompt_flat_list, steps, p, is_negative = False)
 
         res = []
         for indexes in res_indexes:
             res.append([prompt_parser.ComposableScheduledPromptConditioning(learned_conditioning[i], weight) for i, weight in indexes])
 
         return prompt_parser.MulticondLearnedConditioning(shape=(len(prompts),), batch=res)
+        pass
+
+    def my_get_conds_with_caching(self, function, required_prompts, steps, cache):
+        """
+        Returns the result of calling function(shared.sd_model, required_prompts, steps)
+        using a cache to store the result if the same arguments have been used before.
+
+        cache is an array containing two elements. The first element is a tuple
+        representing the previously used arguments, or None if no arguments
+        have been used before. The second element is where the previously
+        computed result is stored.
+        """
+        if cache[0] is not None and (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info) == cache[0]:
+            return cache[1]
+
+        with devices.autocast():
+            cache[1] = function(shared.sd_model, required_prompts, steps, self)
+
+        cache[0] = (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info)
+        return cache[1]
         pass
 
     def load_csv_conditioning(filename: str | os.PathLike) -> torch.Tensor | None:
@@ -608,11 +629,14 @@ class Clip_IO(scripts.Script):
     def process_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
         Clip_IO.mode_positive = args[1]
         Clip_IO.mode_negative = args[2]
+        Clip_IO.evacuate_get_conds_with_caching = p.get_conds_with_caching
+        p.get_conds_with_caching = Clip_IO.my_get_conds_with_caching
         pass
 
     def postprocess_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
         Clip_IO.mode_positive = "Disabled"
         Clip_IO.mode_negative = "Disabled"
+        p.get_conds_with_caching = Clip_IO.evacuate_get_conds_with_caching
         pass
 
     def tokenize_line_manual_chunk(prompt: str, clip: FrozenCLIPEmbedderWithCustomWords | FrozenOpenCLIPEmbedderWithCustomWords) -> list[PromptChunk]:
