@@ -172,7 +172,7 @@ class Clip_IO(scripts.Script):
             pass
         pass
 
-    def get_cond_directive(model, input: str, is_negative: bool, p: processing.StableDiffusionProcessing) -> torch.Tensor | None:
+    def get_cond_directive(model, input: str, is_negative: bool, p: processing.StableDiffusionProcessing = None) -> torch.Tensor | None:
         conds: list[torch.tensor] = []
         dirs: list[Clip_IO.Directive] = []
         class Process(lark.Transformer):
@@ -269,6 +269,9 @@ class Clip_IO(scripts.Script):
         i = torch.vstack(conds)
         o = i.clone()
         c = {}
+        if p is None:
+            warnings.warn("Your web ui is too old to access p: processing.StableDiffusionProcessing .")
+            pass
         dirs.sort()
         for dir in dirs:
             if dir.name == "eval":
@@ -313,7 +316,7 @@ class Clip_IO(scripts.Script):
             pass
         pass
 
-    def my_get_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing, is_negative = True):
+    def my_get_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing = None, is_negative = True):
         """converts a list of prompts into a list of prompt schedules - each schedule is a list of ScheduledPromptConditioning, specifying the comdition (cond),
         and the sampling step at which this condition is to be replaced by the next one.
 
@@ -376,7 +379,7 @@ class Clip_IO(scripts.Script):
         return res
         pass
 
-    def my_get_multicond_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing) -> prompt_parser.MulticondLearnedConditioning:
+    def my_get_multicond_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing = None) -> prompt_parser.MulticondLearnedConditioning:
         """same as get_learned_conditioning, but returns a list of ScheduledPromptConditioning along with the weight objects for each prompt.
         For each prompt, the list is obtained by splitting the prompt using the AND separator.
 
@@ -608,8 +611,10 @@ class Clip_IO(scripts.Script):
         if Clip_IO.enabled:
             Clip_IO.mode_positive = args[1]
             Clip_IO.mode_negative = args[2]
-            Clip_IO.evacuate_get_conds_with_caching = p.get_conds_with_caching
-            p.get_conds_with_caching = Clip_IO.get_my_get_conds_with_caching(p)
+            if getattr(p, "get_conds_with_caching", None) is not None:
+                Clip_IO.evacuate_get_conds_with_caching = p.get_conds_with_caching
+                p.get_conds_with_caching = Clip_IO.get_my_get_conds_with_caching(p)
+                pass
             pass
         pass
 
@@ -617,7 +622,9 @@ class Clip_IO(scripts.Script):
         if Clip_IO.enabled:
             Clip_IO.mode_positive = "Disabled"
             Clip_IO.mode_negative = "Disabled"
-            p.get_conds_with_caching = Clip_IO.evacuate_get_conds_with_caching
+            if getattr(p, "get_conds_with_caching", None) is not None:
+                p.get_conds_with_caching = Clip_IO.evacuate_get_conds_with_caching
+                pass
             pass
         pass
 
