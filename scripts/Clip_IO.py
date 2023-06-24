@@ -471,30 +471,26 @@ class Clip_IO(scripts.Script):
         pass
 
     def get_my_get_conds_with_caching(p: processing.StableDiffusionProcessing):
-        class StableDiffusionProcessing:
-            @classmethod
-            def my_get_conds_with_caching(p, function, required_prompts, steps, cache):
-                """
-                Returns the result of calling function(shared.sd_model, required_prompts, steps)
-                using a cache to store the result if the same arguments have been used before.
+        def my_get_conds_with_caching(function, required_prompts, steps, cache):
+            """
+            Returns the result of calling function(shared.sd_model, required_prompts, steps)
+            using a cache to store the result if the same arguments have been used before.
 
-                cache is an array containing two elements. The first element is a tuple
-                representing the previously used arguments, or None if no arguments
-                have been used before. The second element is where the previously
-                computed result is stored.
-                """
-                if cache[0] is not None and (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info) == cache[0]:
-                    return cache[1]
-
-                with devices.autocast():
-                    cache[1] = function(shared.sd_model, required_prompts, steps, p)
-
-                cache[0] = (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info)
+            cache is an array containing two elements. The first element is a tuple
+            representing the previously used arguments, or None if no arguments
+            have been used before. The second element is where the previously
+            computed result is stored.
+            """
+            if cache[0] is not None and (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info) == cache[0]:
                 return cache[1]
-                pass
+
+            with devices.autocast():
+                cache[1] = function(shared.sd_model, required_prompts, steps, p)
+
+            cache[0] = (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info)
+            return cache[1]
             pass
-        return StableDiffusionProcessing.my_get_conds_with_caching
-        pass
+        return my_get_conds_with_caching
 
     def get_inner_function(outer, new_inner):
         """Replace a nested function code object used by outer with new_inner
@@ -609,16 +605,20 @@ class Clip_IO(scripts.Script):
         pass
 
     def process_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
-        Clip_IO.mode_positive = args[1]
-        Clip_IO.mode_negative = args[2]
-        Clip_IO.evacuate_get_conds_with_caching = p.get_conds_with_caching
-        p.get_conds_with_caching = Clip_IO.get_my_get_conds_with_caching(p)
+        if Clip_IO.enabled:
+            Clip_IO.mode_positive = args[1]
+            Clip_IO.mode_negative = args[2]
+            Clip_IO.evacuate_get_conds_with_caching = p.get_conds_with_caching
+            p.get_conds_with_caching = Clip_IO.get_my_get_conds_with_caching(p)
+            pass
         pass
 
     def postprocess_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
-        Clip_IO.mode_positive = "Disabled"
-        Clip_IO.mode_negative = "Disabled"
-        p.get_conds_with_caching = Clip_IO.evacuate_get_conds_with_caching
+        if Clip_IO.enabled:
+            Clip_IO.mode_positive = "Disabled"
+            Clip_IO.mode_negative = "Disabled"
+            p.get_conds_with_caching = Clip_IO.evacuate_get_conds_with_caching
+            pass
         pass
 
     def tokenize_line_manual_chunk(prompt: str, clip: FrozenCLIPEmbedderWithCustomWords | FrozenOpenCLIPEmbedderWithCustomWords) -> list[PromptChunk]:
