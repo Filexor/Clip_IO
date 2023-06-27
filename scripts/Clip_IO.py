@@ -474,7 +474,7 @@ class Clip_IO(scripts.Script):
         pass
 
     def get_my_get_conds_with_caching(p: processing.StableDiffusionProcessing):
-        def my_get_conds_with_caching(function, required_prompts, steps, cache, extra_network_data):
+        def my_get_conds_with_caching(function, required_prompts, steps, caches, extra_network_data):
             """
             Returns the result of calling function(shared.sd_model, required_prompts, steps)
             using a cache to store the result if the same arguments have been used before.
@@ -483,9 +483,14 @@ class Clip_IO(scripts.Script):
             representing the previously used arguments, or None if no arguments
             have been used before. The second element is where the previously
             computed result is stored.
+
+            caches is a list with items described above.
             """
-            if cache[0] is not None and (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info, extra_network_data) == cache[0]:
-                return cache[1]
+            for cache in caches:
+                if cache[0] is not None and (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info, extra_network_data) == cache[0]:
+                    return cache[1]
+
+            cache = caches[0]
 
             with devices.autocast():
                 cache[1] = function(shared.sd_model, required_prompts, steps, p)
