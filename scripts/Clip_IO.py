@@ -41,7 +41,7 @@ class Clip_IO(scripts.Script):
             with gradio.Row():
                 enabled = gradio.Checkbox(label = "Enable")
                 mode_positive = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Positive prompt mode")
-                mode_negative = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Positive prompt mode")
+                mode_negative = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Negative prompt mode")
                 pass
             pass
         if not is_img2img:
