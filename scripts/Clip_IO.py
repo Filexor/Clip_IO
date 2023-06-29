@@ -2,7 +2,6 @@ import os, csv, warnings, datetime
 import math as math
 from collections import namedtuple
 from enum import IntEnum
-from distutils.util import strtobool
 
 import gradio
 import torch
@@ -336,7 +335,16 @@ class Clip_IO(scripts.Script):
                                 self.keyword_position += 1
                                 pass
                             case 1:
-                                keyword_arguments["padding"] = strtobool(token.strip(" "))
+                                if token.strip(" ").lower == "true":
+                                    value = True
+                                    pass
+                                elif token.strip(" ").lower == "false":
+                                    value = False
+                                    pass
+                                else:
+                                    raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
+                                    pass
+                                keyword_arguments["padding"] = value
                                 self.keyword_position += 1
                                 pass
                             case _:
