@@ -275,6 +275,10 @@ class Clip_IO(scripts.Script):
             pass
 
         Process().transform(lark.Lark(Clip_IO.syntax_directive).parse(input))
+        if len(conds) == 0:
+            tmp = Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword("a", manual_chunk=True)
+            conds.append(torch.zeros(0, tmp.shape[1]).to(devices.device))
+            pass
         i = torch.vstack(conds)
         o = i.clone()
         c = {}
@@ -313,10 +317,14 @@ class Clip_IO(scripts.Script):
             elif dir.name == "prompt":
                 # prompt(prompt: str, clip_skip: int|None=None, padding=True)
                 prompt: str
-                keyword_arguments: dict[str, str] = {}
-                class prompt_visiter(lark.visitors.Visitor):
+                keyword_arguments: dict[str, str] = {"clip_skip": None, "padding": True}
+                class prompt_transformer(lark.visitors.Transformer):
                     keyword_position = 0
                     def PROMPT(self, token: lark.Token):
+                        nonlocal prompt
+                        if token.startswith('"""') and token.endswith('"""') or token.startswith("'''") and token.endswith("'''"):
+                            token = token[3:-3]
+                            pass
                         prompt = token
                         pass
                     def ARGUMENT(self, token: lark.Token):
@@ -355,7 +363,7 @@ class Clip_IO(scripts.Script):
                         keyword_arguments[tree.children[0].strip(" ")] = tree.children[1].strip(" ")
                         pass
                     pass
-                prompt_visiter().visit(lark.Lark(Clip_IO.syntax_directive_prompt).parse(dir.inner))
+                prompt_transformer().transform(lark.Lark(Clip_IO.syntax_directive_prompt).parse(dir.inner))
                 evacuate_clip_skip = shared.opts.CLIP_stop_at_last_layers
                 if keyword_arguments["clip_skip"] is not None:
                     shared.opts.CLIP_stop_at_last_layers = keyword_arguments["clip_skip"]
