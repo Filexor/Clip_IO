@@ -149,8 +149,9 @@ class Clip_IO(scripts.Script):
     """
 
     syntax_directive_prompt = r"""
-    start: PROMPT ("," [ARGUMENT])* ("," keyword_argument)*
+    start: PROMPT ("," argument)* ("," keyword_argument)*
     PROMPT: /"{3}/ /.*?/ /"{3}/ | /'{3}/ /.*?/ /'{3}/
+    argument: [ARGUMENT]
     ARGUMENT: /[^=,]+/
     keyword_argument: KEYWORD "=" VALUE
     KEYWORD: /[^=,]+/
@@ -317,7 +318,7 @@ class Clip_IO(scripts.Script):
             elif dir.name == "prompt":
                 # prompt(prompt: str, clip_skip: int|None=None, padding=True)
                 prompt: str
-                keyword_arguments: dict[str, str] = {"clip_skip": None, "padding": True}
+                keyword_arguments: dict = {"clip_skip": None, "padding": True}
                 class prompt_transformer(lark.visitors.Transformer):
                     keyword_position = 0
                     def PROMPT(self, token: lark.Token):
@@ -327,7 +328,11 @@ class Clip_IO(scripts.Script):
                             pass
                         prompt = token
                         pass
-                    def ARGUMENT(self, token: lark.Token):
+                    def argument(self, token: lark.Token):
+                        token = token[0]
+                        if token is None:
+                            self.keyword_position += 1
+                            return
                         match self.keyword_position:
                             case 0:
                                 if token.strip(" ").lower() == "none":
@@ -343,10 +348,10 @@ class Clip_IO(scripts.Script):
                                 self.keyword_position += 1
                                 pass
                             case 1:
-                                if token.strip(" ").lower == "true":
+                                if token.strip(" ").lower() == "true":
                                     value = True
                                     pass
-                                elif token.strip(" ").lower == "false":
+                                elif token.strip(" ").lower() == "false":
                                     value = False
                                     pass
                                 else:
