@@ -321,9 +321,9 @@ class Clip_IO(scripts.Script):
                     i = local["o"].clone()
                 pass
             elif dir.name == "prompt":
-                # prompt(prompt: str, clip_skip: int|None=None, padding=True)
+                # prompt(prompt: str, clip_skip: int|None=None, no_padding=True)
                 prompt: tuple[str]
-                keyword_arguments: dict = {"clip_skip": None, "padding": True}
+                keyword_arguments: dict = {"clip_skip": None, "no_padding": False}
                 class prompt_transformer(lark.visitors.Transformer):
                     keyword_position = 0
 
@@ -376,7 +376,7 @@ class Clip_IO(scripts.Script):
                                 else:
                                     raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
                                     pass
-                                keyword_arguments["padding"] = [value]
+                                keyword_arguments["no_padding"] = [value]
                                 self.keyword_position += 1
                                 pass
                             case _:
@@ -403,7 +403,7 @@ class Clip_IO(scripts.Script):
                                     pass
                                 pass
                             case 1:
-                                keyword_arguments["padding"] = []
+                                keyword_arguments["no_padding"] = []
                                 for token in token:
                                     if token.strip(" ").lower() == "true":
                                         value = True
@@ -414,7 +414,7 @@ class Clip_IO(scripts.Script):
                                     else:
                                         raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
                                         pass
-                                    keyword_arguments["padding"].append(value)
+                                    keyword_arguments["no_padding"].append(value)
                                     self.keyword_position += 1
                                     pass
                                 pass
@@ -429,7 +429,7 @@ class Clip_IO(scripts.Script):
                         pass
                     pass
                 prompt_transformer().transform(lark.Lark(Clip_IO.syntax_directive_prompt).parse(dir.inner))
-                o = torch.vstack([o, Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(prompt, manual_chunk= not keyword_arguments["padding"], clip_skips=[keyword_arguments["clip_skip"]])])
+                o = torch.vstack([o, Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(prompt, manual_chunk= keyword_arguments["no_padding"], clip_skips=[keyword_arguments["clip_skip"]])])
                 i = o.clone()
                 pass
             else:

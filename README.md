@@ -68,6 +68,7 @@ p: modules.processing.StableDiffusionProcessing : [See source code of Stable dif
 torch module and all objects in math module  
 ##### prompt  
 "prompt" is prompt with some additional options.  
-syntax example: `?prompt("""prompt must be triple quoted""", clip_skip=2, padding=False)`  
+syntax example: `?prompt("""prompt must be triple single/double quoted""", clip_skip=2, no_padding=False)`  
 arguments can be written as positional or omitted: `?prompt('''this also work''',,True)`  
-`padding` is negation of `Don't add bos / eos / pad tokens` in Clip Output.  
+prompt and clip_skip can be with list or tuple syntax: `?prompt(("This part of clip_skip is 2", 'Here is 1', "1 is broadcasted because clip_skip is exhausted"),[2,1])`
+`no_padding` does same behavior of `Don't add bos / eos / pad tokens` in Clip Output.  
