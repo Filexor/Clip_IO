@@ -852,6 +852,8 @@ class Clip_IO(scripts.Script):
         for tokens, (text, weight) in zip(tokenized, parsed):
             if text == 'SEPARATION' and weight == -1:
                 separation_starts.append((len(chunks), len(chunk.tokens)))
+                continue
+                pass
 
             if text == 'BREAK' and weight == -1:
                 next_chunk()
