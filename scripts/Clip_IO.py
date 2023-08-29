@@ -20,6 +20,7 @@ class Clip_IO(scripts.Script):
     mode_positive = "Disabled"
     mode_negative = "Disabled"
     conditioning_cache = {}
+    global_carry = {}
     
     evacuate_get_learned_conditioning = None
     evacuate_get_multicond_learned_conditioning = None
@@ -43,12 +44,14 @@ class Clip_IO(scripts.Script):
                 mode_positive = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Positive prompt mode")
                 mode_negative = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Negative prompt mode")
                 pass
+            pre_batch_process = gradio.TextArea(max_lines=1024, label="Pre-batch-process")
+            post_batch_process = gradio.TextArea(max_lines=1024, label="Post-batch-process-process")
             pass
         if not is_img2img:
-            return [enabled, mode_positive, mode_negative]
+            return [enabled, mode_positive, mode_negative, post_batch_process, pre_batch_process]
             pass
         else:
-            return [enabled, mode_positive, mode_negative]
+            return [enabled, mode_positive, mode_negative, post_batch_process, pre_batch_process]
             pass
         return []
         pass
@@ -282,7 +285,7 @@ class Clip_IO(scripts.Script):
 
         Process().transform(lark.Lark(Clip_IO.syntax_directive).parse(input))
         if len(conds) == 0:
-            tmp = Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(("a",), manual_chunk=True)
+            tmp = Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(("a",), manual_chunk=False)
             conds.append(torch.zeros(0, tmp.shape[1]).to(devices.device))
             pass
         i = torch.vstack(conds)
@@ -297,25 +300,25 @@ class Clip_IO(scripts.Script):
                 try:
                     for t in range(i.shape[0]):
                         for d in range(i.shape[1]):
-                            local = {"i": i, "o": o, "c": c, "p": p, "t": t, "d": d, "torch": torch.__dict__} | math.__dict__
+                            local = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "t": t, "d": d, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
                             o[t, d] = eval(dir.inner, None, local)
                             pass
                         pass
                     pass
                 except Exception as e:
-                    print(repr(e))
                     o = i
+                    raise e
                     pass
                 finally:
                     i = o.clone()
                 pass
             elif dir.name == "exec":
                 try:
-                    local = {"i": i, "o": o, "c": c, "p": p, "torch": torch.__dict__} | math.__dict__
+                    local = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
                     exec(dir.inner, None, local)
                 except Exception as e:
-                    print(repr(e))
                     o = i
+                    raise e
                     pass
                 finally:
                     i = local["o"].clone()
@@ -323,7 +326,7 @@ class Clip_IO(scripts.Script):
             elif dir.name == "prompt":
                 # prompt(prompt: str, clip_skip: int|None=None, no_padding=True)
                 prompt: tuple[str]
-                keyword_arguments: dict = {"clip_skip": None, "no_padding": False}
+                keyword_arguments: dict = {"clip_skip": [None], "no_padding": False}
                 class prompt_transformer(lark.visitors.Transformer):
                     keyword_position = 0
 
@@ -355,7 +358,7 @@ class Clip_IO(scripts.Script):
                         match self.keyword_position:
                             case 0:
                                 if token.strip(" ").lower() == "none":
-                                    keyword_arguments["clip_skip"] = [None]
+                                    keyword_arguments["clip_skip"] = [[None]]
                                     pass
                                 else:
                                     try:
@@ -431,6 +434,27 @@ class Clip_IO(scripts.Script):
                 prompt_transformer().transform(lark.Lark(Clip_IO.syntax_directive_prompt).parse(dir.inner))
                 o = torch.vstack([o, Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(prompt, manual_chunk= keyword_arguments["no_padding"], clip_skips=[keyword_arguments["clip_skip"]])])
                 i = o.clone()
+                pass
+            elif dir.name == "execfile":
+                try:
+                    if dir.inner.startswith('"') and dir.inner.endswith('"') or dir.inner.startswith("'") and dir.inner.endswith("'"):
+                        dir.inner = dir.inner[1:-1]
+                        pass
+                    if not os.path.exists(dir.inner):
+                        dir.inner = os.path.join(os.path.dirname(__file__), "../program", dir.inner)
+                        if not os.path.exists(dir.inner):
+                            dir.inner = dir.inner + ".py"
+                            pass
+                        pass
+                    with open(dir.inner) as program:
+                        local = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
+                        exec(program, None, local)
+                        pass
+                    pass
+                except Exception as e:
+                    o = i
+                    raise e
+                    pass
                 pass
             else:
                 warnings.warn(f'Directive "{dir.name}" does not exist.')
@@ -727,7 +751,6 @@ class Clip_IO(scripts.Script):
             prompt_parser.get_learned_conditioning = Clip_IO.my_get_learned_conditioning
             prompt_parser.get_multicond_learned_conditioning = Clip_IO.my_get_multicond_learned_conditioning
             #Clip_IO.replace_inner_function(processing.process_images_inner, Clip_IO.get_my_get_conds_with_caching())
-            pass
         else:
             Clip_IO.enabled = False
             pass
@@ -751,15 +774,30 @@ class Clip_IO(scripts.Script):
                 Clip_IO.evacuate_get_conds_with_caching = p.get_conds_with_caching
                 p.get_conds_with_caching = Clip_IO.get_my_get_conds_with_caching(p)
                 pass
+            try:
+                local = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
+                exec(args[4], None, local)
+            except Exception as e:
+                raise e
+                pass
+            pass
             pass
         pass
 
     def postprocess_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
         if Clip_IO.enabled:
-            Clip_IO.mode_positive = "Disabled"
-            Clip_IO.mode_negative = "Disabled"
-            if getattr(p, "get_conds_with_caching", None) is not None:
-                p.get_conds_with_caching = Clip_IO.evacuate_get_conds_with_caching
+            try:
+                local = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
+                exec(args[3], None, local)
+            except Exception as e:
+                raise e
+                pass
+            finally:
+                Clip_IO.mode_positive = "Disabled"
+                Clip_IO.mode_negative = "Disabled"
+                if getattr(p, "get_conds_with_caching", None) is not None:
+                    p.get_conds_with_caching = Clip_IO.evacuate_get_conds_with_caching
+                    pass
                 pass
             pass
         pass
@@ -936,7 +974,7 @@ class Clip_IO(scripts.Script):
     def get_chunks(prompt: str | tuple[str, ...], clip: FrozenCLIPEmbedderWithCustomWords | FrozenOpenCLIPEmbedderWithCustomWords, manual_chunk: bool) -> tuple[list[list[PromptChunk]],list[list[tuple[int,int]]]]:
         "Return: PromptChunks, token separation position"
         if isinstance(prompt, str):
-            prompt = [prompt]
+            prompt = (prompt,)
             pass
         if opts.use_old_emphasis_implementation:
             raise NotImplementedError
@@ -1120,6 +1158,7 @@ class Clip_IO(scripts.Script):
         pass
 
     def encode_with_transformers(clip, tokens, chunk_count: int, clip_skips: list[list[int | None]], separation_starts_list:list[list[tuple[int,int]]]):
+        clip.wrapped.transformer.to(shared.device)
         outputs = clip.wrapped.transformer(input_ids=tokens, output_hidden_states=-opts.CLIP_stop_at_last_layers)
 
         zs = []
@@ -1130,7 +1169,7 @@ class Clip_IO(scripts.Script):
 
         if opts.CLIP_stop_at_last_layers > 1:
             zo = outputs.hidden_states[-opts.CLIP_stop_at_last_layers]
-            zo = clip.wrapped.transformer.text_model.final_layer_norm(z)
+            zo = clip.wrapped.transformer.text_model.final_layer_norm(zo)
         else:
             zo = outputs.last_hidden_state
 
@@ -1184,7 +1223,7 @@ class Clip_IO(scripts.Script):
             tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
             clip.hijack.fixes = [x.fixes for x in batch_chunk]
 
-            if clip.id_end != clip.id_pad:
+            if clip.id_end != clip.id_pad and not manual_chunk:
                 for batch_pos in range(len(remade_batch_tokens)):
                     index = remade_batch_tokens[batch_pos].index(clip.id_end)
                     tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
