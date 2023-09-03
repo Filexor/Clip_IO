@@ -4,7 +4,7 @@ from collections import namedtuple
 from enum import IntEnum
 
 import gradio
-import torch
+import torch as torch
 import lark
 import open_clip
 
@@ -314,8 +314,8 @@ class Clip_IO(scripts.Script):
                 pass
             elif dir.name == "exec":
                 try:
-                    local = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
-                    exec(dir.inner, None, local)
+                    globals = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                    exec(dir.inner, globals, None)
                 except Exception as e:
                     o = i
                     raise e
@@ -447,8 +447,8 @@ class Clip_IO(scripts.Script):
                             pass
                         pass
                     with open(dir.inner) as program:
-                        local = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
-                        exec(program, None, local)
+                        globals = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                        exec(program, globals, None)
                         pass
                     pass
                 except Exception as e:
@@ -775,8 +775,8 @@ class Clip_IO(scripts.Script):
                 p.get_conds_with_caching = Clip_IO.get_my_get_conds_with_caching(p)
                 pass
             try:
-                local = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
-                exec(args[4], None, local)
+                globals = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                exec(args[4], globals, None)
             except Exception as e:
                 raise e
                 pass
@@ -787,8 +787,8 @@ class Clip_IO(scripts.Script):
     def postprocess_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
         if Clip_IO.enabled:
             try:
-                local = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch.__dict__} | math.__dict__
-                exec(args[3], None, local)
+                globals = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                exec(args[3], globals, None)
             except Exception as e:
                 raise e
                 pass
