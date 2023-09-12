@@ -44,8 +44,10 @@ class Clip_IO(scripts.Script):
                 mode_positive = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Positive prompt mode")
                 mode_negative = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Negative prompt mode")
                 pass
-            pre_batch_process = gradio.TextArea(max_lines=1024, label="Pre-batch-process")
-            post_batch_process = gradio.TextArea(max_lines=1024, label="Post-batch-process-process")
+            with gradio.Accordion("Pre/Post-process"):
+                pre_batch_process = gradio.TextArea(max_lines=1024, label="Pre-batch-process")
+                post_batch_process = gradio.TextArea(max_lines=1024, label="Post-batch-process-process")
+                pass
             pass
         if not is_img2img:
             return [enabled, mode_positive, mode_negative, post_batch_process, pre_batch_process]
@@ -314,14 +316,14 @@ class Clip_IO(scripts.Script):
                 pass
             elif dir.name == "exec":
                 try:
-                    globals = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                    globals = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch, "math": math}
                     exec(dir.inner, globals, None)
                 except Exception as e:
                     o = i
                     raise e
                     pass
                 finally:
-                    i = local["o"].clone()
+                    i = globals["o"].clone()
                 pass
             elif dir.name == "prompt":
                 # prompt(prompt: str, clip_skip: int|None=None, no_padding=True)
@@ -447,7 +449,7 @@ class Clip_IO(scripts.Script):
                             pass
                         pass
                     with open(dir.inner) as program:
-                        globals = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                        globals = {"i": i, "o": o, "g": Clip_IO.global_carry, "c": c, "p": p, "sd_model": shared.sd_model, "torch": torch, "math": math}
                         exec(program, globals, None)
                         pass
                     pass
@@ -775,7 +777,7 @@ class Clip_IO(scripts.Script):
                 p.get_conds_with_caching = Clip_IO.get_my_get_conds_with_caching(p)
                 pass
             try:
-                globals = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                globals = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch, "math": math}
                 exec(args[4], globals, None)
             except Exception as e:
                 raise e
@@ -787,7 +789,7 @@ class Clip_IO(scripts.Script):
     def postprocess_batch(self, p: processing.StableDiffusionProcessing, *args, **kwargs):
         if Clip_IO.enabled:
             try:
-                globals = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch} | math
+                globals = {"g": Clip_IO.global_carry, "p": p, "sd_model": shared.sd_model, "torch": torch, "math": math}
                 exec(args[3], globals, None)
             except Exception as e:
                 raise e
