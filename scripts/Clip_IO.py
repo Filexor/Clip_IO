@@ -44,7 +44,7 @@ class Clip_IO(scripts.Script):
                 mode_positive = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Positive prompt mode")
                 mode_negative = gradio.Dropdown(["Disabled", "Simple", "Directive"], value = "Disabled", max_choices = 1, label = "Negative prompt mode")
                 pass
-            with gradio.Accordion("Pre/Post-process"):
+            with gradio.Accordion("Pre/Post-process", open = False):
                 pre_batch_process = gradio.TextArea(max_lines=1024, label="Pre-batch-process")
                 post_batch_process = gradio.TextArea(max_lines=1024, label="Post-batch-process-process")
                 pass
@@ -473,7 +473,7 @@ class Clip_IO(scripts.Script):
             pass
         pass
 
-    def my_get_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing = None, is_negative = True):
+    def my_get_learned_conditioning(model, prompts: prompt_parser.SdConditioning | list[str], steps, hires_steps=None, use_old_scheduling=False, p: processing.StableDiffusionProcessing = None, is_negative = True):
         """converts a list of prompts into a list of prompt schedules - each schedule is a list of ScheduledPromptConditioning, specifying the comdition (cond),
         and the sampling step at which this condition is to be replaced by the next one.
 
@@ -497,7 +497,7 @@ class Clip_IO(scripts.Script):
             prompt_schedules = [[[steps, prompt]] for prompt in prompts]
             pass
         else:
-            prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompts, steps)
+            prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompts, steps, hires_steps, use_old_scheduling)
             pass
 
         res = []
@@ -509,7 +509,7 @@ class Clip_IO(scripts.Script):
                 res.append(cached)
                 continue
 
-            texts: list[str] = [x[1] for x in prompt_schedule]
+            texts = prompt_parser.SdConditioning([x[1] for x in prompt_schedule], copy_from=prompts)
             if Clip_IO.enabled and (Clip_IO.mode_positive == "Simple" and not is_negative or Clip_IO.mode_negative == "Simple" and is_negative):
                 conds = []
                 for text in texts:
@@ -528,7 +528,15 @@ class Clip_IO(scripts.Script):
 
             cond_schedule = []
             for i, (end_at_step, text) in enumerate(prompt_schedule):
-                cond_schedule.append(prompt_parser.ScheduledPromptConditioning(end_at_step, conds[i].to(devices.device)))
+                if isinstance(conds, dict):
+                    cond = {k: v[i] for k, v in conds.items()}
+                    pass
+                else:
+                    cond = conds[i]
+                    pass
+
+                cond_schedule.append(prompt_parser.ScheduledPromptConditioning(end_at_step, cond))
+                pass
 
             cache[prompt] = cond_schedule
             res.append(cond_schedule)
@@ -536,7 +544,7 @@ class Clip_IO(scripts.Script):
         return res
         pass
 
-    def my_get_multicond_learned_conditioning(model, prompts, steps, p: processing.StableDiffusionProcessing = None) -> prompt_parser.MulticondLearnedConditioning:
+    def my_get_multicond_learned_conditioning(model, prompts, steps, hires_steps=None, use_old_scheduling=False, p: processing.StableDiffusionProcessing = None) -> prompt_parser.MulticondLearnedConditioning:
         """same as get_learned_conditioning, but returns a list of ScheduledPromptConditioning along with the weight objects for each prompt.
         For each prompt, the list is obtained by splitting the prompt using the AND separator.
 
@@ -545,11 +553,12 @@ class Clip_IO(scripts.Script):
 
         res_indexes, prompt_flat_list, prompt_indexes = prompt_parser.get_multicond_prompt_list(prompts)
 
-        learned_conditioning = prompt_parser.get_learned_conditioning(model, prompt_flat_list, steps, p, is_negative = False)
+        learned_conditioning = prompt_parser.get_learned_conditioning(model, prompt_flat_list, steps, hires_steps, use_old_scheduling, p, is_negative = False)
 
         res = []
         for indexes in res_indexes:
             res.append([prompt_parser.ComposableScheduledPromptConditioning(learned_conditioning[i], weight) for i, weight in indexes])
+            pass
 
         return prompt_parser.MulticondLearnedConditioning(shape=(len(prompts),), batch=res)
         pass
@@ -631,7 +640,7 @@ class Clip_IO(scripts.Script):
         pass
 
     def get_my_get_conds_with_caching(p: processing.StableDiffusionProcessing):
-        def my_get_conds_with_caching(function, required_prompts, steps, caches, extra_network_data):
+        def my_get_conds_with_caching(function, required_prompts, steps, caches, extra_network_data, hires_steps=None):
             """
             Returns the result of calling function(shared.sd_model, required_prompts, steps)
             using a cache to store the result if the same arguments have been used before.
@@ -643,18 +652,29 @@ class Clip_IO(scripts.Script):
 
             caches is a list with items described above.
             """
+            if shared.opts.use_old_scheduling:
+                old_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(required_prompts, steps, hires_steps, False)
+                new_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(required_prompts, steps, hires_steps, True)
+                if old_schedules != new_schedules:
+                    p.extra_generation_params["Old prompt editing timelines"] = True
+                    pass
+                pass
+
+            cached_params = p.cached_params(required_prompts, steps, extra_network_data, hires_steps, shared.opts.use_old_scheduling)
+
             for cache in caches:
-                if cache[0] is not None and (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info, extra_network_data) == cache[0]:
+                if cache[0] is not None and cached_params == cache[0] and not Clip_IO.enabled:
                     return cache[1]
 
             cache = caches[0]
 
             with devices.autocast():
-                cache[1] = function(shared.sd_model, required_prompts, steps, p)
+                cache[1] = function(shared.sd_model, required_prompts, steps, hires_steps, shared.opts.use_old_scheduling)
 
-            cache[0] = (required_prompts, steps, opts.CLIP_stop_at_last_layers, shared.sd_model.sd_checkpoint_info, extra_network_data)
+            cache[0] = cached_params
             return cache[1]
             pass
+
         return my_get_conds_with_caching
 
     def get_inner_function(outer, new_inner):
