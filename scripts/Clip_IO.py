@@ -174,11 +174,11 @@ class Clip_IO(scripts.Script):
     RAWPROMPT: /[^{}]+/
     selector: "{" [[range] "$$" [DELIMITER "$$"]] prompt ("|" prompt)* "}"
     prompt: [[SPACE] FLOAT_NUMBER [SPACE] ":::"] PROMPT
-    PROMPT: (/[^{}:]/ | /:(?!::)/)+
+    PROMPT: (/[^{}|:]/ | /:(?!::)/)+
     %import python.FLOAT_NUMBER
     range: [SPACE] POSITIVENUMBER [SPACE] ["-" [SPACE] POSITIVENUMBER [SPACE]]
     POSITIVENUMBER: /[0-9]+/
-    DELIMITER: (/[^$]/ | /$(?!$)/)+
+    DELIMITER: (/[^$]+/ | /\$(?!\$)/)+
     SPACE: /\s+/
     """
 
@@ -207,6 +207,7 @@ class Clip_IO(scripts.Script):
         pass
 
     def get_cond_directive(model, input: str, is_negative: bool, p: processing.StableDiffusionProcessing = None) -> torch.Tensor | None:
+        random.seed(p.seed)
         conds: list[torch.tensor] = []
         dirs: list[Clip_IO.Directive] = []
         class Process(lark.Transformer):
@@ -441,15 +442,13 @@ class Clip_IO(scripts.Script):
                                 self.keyword_position += 1
                                 pass
                         pass
-                        pass
 
-                    def keyword_argument(self, tree: lark.tree.Tree):
-                        keyword_arguments[tree.children[0].strip(" ")] = tree.children[1].strip(" ")
+                    def keyword_argument(self, args: list):
+                        keyword_arguments[args[0].strip(" ")] = args[1].strip(" ")
                         pass
                     pass
                 prompt_transformer().transform(lark.Lark(Clip_IO.syntax_directive_prompt).parse(dir.inner))
                 if bool(keyword_arguments["random"]):
-                    random.seed = p.seed
                     prompts_tmp: list[str] = []
                     for prompt in prompts:
                         prompt_tmp:list[str] = []
@@ -470,7 +469,7 @@ class Clip_IO(scripts.Script):
                                     pass
                                 return (begin, end)
                                 pass
-                            def selector(self, tokens: list[tuple|lark.Token]):
+                            def selector(self, tokens: list[tuple|lark.Token|lark.Tree]):
                                 if tokens[0] is None:
                                     _range = (1, 1)
                                     _delimiter = ""
@@ -491,14 +490,14 @@ class Clip_IO(scripts.Script):
                                 _count = random.randint(_range[0], _range[1])
                                 _weights = []
                                 _selections = []
-                                for token in tokens[1:]:
-                                    if token[0] is None:
+                                for token in tokens[2:]:
+                                    if token.children[1] is None:
                                         _weights.append(1)
                                         pass
                                     else:
-                                        _weights.append(float(token[0][1]))
+                                        _weights.append(float(token.children[1]))
                                         pass
-                                    _selections.append(token[1])
+                                    _selections.append(token.children[3])
                                     pass
                                 _results = random.choices(_selections, _weights, k=_count)
                                 for _result in _results[:-1]:
@@ -508,8 +507,8 @@ class Clip_IO(scripts.Script):
                                 prompt_tmp.append(_results[-1])
                                 pass
                             pass
-                        prompt_randomizer().transform(lark.Lark(Clip_IO.syntax_directive_inplace_randomizer).parse(prompt))
-                        prompts_tmp.append(str.join(prompt_tmp))
+                        prompt_randomizer().transform(lark.Lark(Clip_IO.syntax_directive_inplace_randomizer, maybe_placeholders=True).parse(prompt))
+                        prompts_tmp.append("".join(prompt_tmp))
                         pass
                     prompts = tuple(prompts_tmp)
                     pass
@@ -748,7 +747,7 @@ class Clip_IO(scripts.Script):
             cache = caches[0]
 
             with devices.autocast():
-                cache[1] = function(shared.sd_model, required_prompts, steps, hires_steps, shared.opts.use_old_scheduling)
+                cache[1] = function(shared.sd_model, required_prompts, steps, hires_steps, shared.opts.use_old_scheduling, p)
 
             cache[0] = cached_params
             return cache[1]
