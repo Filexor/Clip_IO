@@ -1,5 +1,6 @@
 import os, csv, warnings, datetime
 import math as math
+import random
 from collections import namedtuple
 from enum import IntEnum
 
@@ -168,6 +169,19 @@ class Clip_IO(scripts.Script):
     SPACE: /\s+/
     """
 
+    syntax_directive_inplace_randomizer = r"""
+    start: (RAWPROMPT | selector)*
+    RAWPROMPT: /[^{}]+/
+    selector: "{" [[range] "$$" [DELIMITER "$$"]] prompt ("|" prompt)* "}"
+    prompt: [[SPACE] FLOAT_NUMBER [SPACE] ":::"] PROMPT
+    PROMPT: (/[^{}:]/ | /:(?!::)/)+
+    %import python.FLOAT_NUMBER
+    range: [SPACE] POSITIVENUMBER [SPACE] ["-" [SPACE] POSITIVENUMBER [SPACE]]
+    POSITIVENUMBER: /[0-9]+/
+    DELIMITER: (/[^$]/ | /$(?!$)/)+
+    SPACE: /\s+/
+    """
+
     class Directive:
         class Names(IntEnum):
             eval
@@ -290,7 +304,7 @@ class Clip_IO(scripts.Script):
             tmp = Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(("a",), manual_chunk=False)
             conds.append(torch.zeros(0, tmp.shape[1]).to(devices.device))
             pass
-        i = torch.vstack(conds)
+        i = torch.vstack(conds).to(devices.device)
         o = i.clone()
         c = {}
         if p is None:
@@ -327,19 +341,19 @@ class Clip_IO(scripts.Script):
                 pass
             elif dir.name == "prompt":
                 # prompt(prompt: str, clip_skip: int|None=None, no_padding=True)
-                prompt: tuple[str]
-                keyword_arguments: dict = {"clip_skip": [None], "no_padding": False}
+                prompts: tuple[str]
+                keyword_arguments: dict = {"clip_skip": [None], "no_padding": False, "random": False}
                 class prompt_transformer(lark.visitors.Transformer):
                     keyword_position = 0
 
                     def prompt(self, token: list[lark.Token]):
-                        nonlocal prompt
-                        prompt = (token[0],)
+                        nonlocal prompts
+                        prompts = (token[0],)
                         pass
 
                     def prompts(self, tokens: list[lark.Token]):
-                        nonlocal prompt
-                        prompt = tuple(tokens)
+                        nonlocal prompts
+                        prompts = tuple(tokens)
                         pass
 
                     def PROMPT(self, token: lark.Token):
@@ -434,7 +448,72 @@ class Clip_IO(scripts.Script):
                         pass
                     pass
                 prompt_transformer().transform(lark.Lark(Clip_IO.syntax_directive_prompt).parse(dir.inner))
-                o = torch.vstack([o, Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(prompt, manual_chunk= keyword_arguments["no_padding"], clip_skips=[keyword_arguments["clip_skip"]])])
+                if bool(keyword_arguments["random"]):
+                    random.seed = p.seed
+                    prompts_tmp: list[str] = []
+                    for prompt in prompts:
+                        prompt_tmp:list[str] = []
+                        class prompt_randomizer(lark.visitors.Transformer):
+                            def RAWPROMPT(self, token: lark.Token):
+                                prompt_tmp.append(token)
+                                pass
+                            def POSITIVENUMBER(self, token: lark.Token):
+                                return int(token)
+                                pass
+                            def range(self, tokens: list[lark.Token]):
+                                begin = int(tokens[1])
+                                if tokens[3] is None:
+                                    end = begin
+                                    pass
+                                else:
+                                    end = tokens[3][2]
+                                    pass
+                                return (begin, end)
+                                pass
+                            def selector(self, tokens: list[tuple|lark.Token]):
+                                if tokens[0] is None:
+                                    _range = (1, 1)
+                                    _delimiter = ""
+                                    pass
+                                else:
+                                    if tokens[0][0] is None:
+                                        _range = (1, 1)
+                                        pass
+                                    else:
+                                        _range = tokens[0][0]
+                                        pass
+                                    if tokens[0][1] is None:
+                                        _delimiter = ""
+                                        pass
+                                    else:
+                                        _delimiter = tokens[0][1]
+                                        pass
+                                _count = random.randint(_range[0], _range[1])
+                                _weights = []
+                                _selections = []
+                                for token in tokens[1:]:
+                                    if token[0] is None:
+                                        _weights.append(1)
+                                        pass
+                                    else:
+                                        _weights.append(float(token[0][1]))
+                                        pass
+                                    _selections.append(token[1])
+                                    pass
+                                _results = random.choices(_selections, _weights, k=_count)
+                                for _result in _results[:-1]:
+                                    prompt_tmp.append(_result)
+                                    prompt_tmp.append(_delimiter)
+                                    pass
+                                prompt_tmp.append(_results[-1])
+                                pass
+                            pass
+                        prompt_randomizer().transform(lark.Lark(Clip_IO.syntax_directive_inplace_randomizer).parse(prompt))
+                        prompts_tmp.append(str.join(prompt_tmp))
+                        pass
+                    prompts = tuple(prompts_tmp)
+                    pass
+                o = torch.vstack([o, Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(prompts, manual_chunk=bool(keyword_arguments["no_padding"]), clip_skips=[keyword_arguments["clip_skip"]])])
                 i = o.clone()
                 pass
             elif dir.name == "execfile":
