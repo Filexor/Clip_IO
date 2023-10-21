@@ -394,13 +394,13 @@ class Clip_IO(scripts.Script):
                                     value = False
                                     pass
                                 else:
-                                    raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
+                                    raise RuntimeError(f'Given argument "{token}" for "no_padding" is neither True nor False.')
                                     pass
                                 keyword_arguments["no_padding"] = value
                                 self.keyword_position += 1
                                 pass
                             case 2:
-                                value = token.strip(" ").lower()
+                                value = token.strip(" \"\'").lower()
                                 if value not in ["default", "empty", "empty_mean", "empty_0th"]:
                                     value = "default"
                                 keyword_arguments["emphasis_mode"] = value
@@ -414,7 +414,7 @@ class Clip_IO(scripts.Script):
                                     value = False
                                     pass
                                 else:
-                                    raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
+                                    raise RuntimeError(f'Given argument "{token}" for "no_normalization" is neither True nor False.')
                                     pass
                                 keyword_arguments["no_normalization"] = value
                                 self.keyword_position += 1
@@ -424,11 +424,11 @@ class Clip_IO(scripts.Script):
                                 pass
                         pass
 
-                    def arguments(self, token: list[lark.Token]):
+                    def argument_list(self, tokens: list[lark.Token]):
                         match self.keyword_position:
                             case 0:
                                 keyword_arguments["clip_skip"] = []
-                                for token in token:
+                                for token in tokens:
                                     if token.strip(" ").lower() == "none" or token.strip(" ") == "":
                                         keyword_arguments["clip_skip"].append(None)
                                         pass
@@ -439,8 +439,8 @@ class Clip_IO(scripts.Script):
                                         except Exception:
                                             print(f'Given argument "{token}" is neither integer nor None.')
                                             pass
-                                    self.keyword_position += 1
                                     pass
+                                self.keyword_position += 1
                                 pass
                             case 1:
                                 raise ValueError('"no_padding" positional argument must not be list.')
@@ -460,6 +460,7 @@ class Clip_IO(scripts.Script):
                         keyword_arguments[args[0].strip(" ")] = args[1].strip(" ")
                         pass
                     pass
+
                 prompt_transformer().transform(lark.Lark(Clip_IO.syntax_directive_prompt).parse(dir.inner))
                 if bool(keyword_arguments["random"]):
                     prompts_tmp: list[str] = []
