@@ -155,15 +155,15 @@ class Clip_IO(scripts.Script):
     """
 
     syntax_directive_prompt = r"""
-    start: (prompt | prompts) ("," (argument | arguments))* ("," (keyword_argument | keyword_arguments))*
+    start: (prompt | prompts) ("," (argument | argument_list))* ("," (keyword_argument | keyword_argument_list))*
     prompt: PROMPT
     prompts: "(" SPACE? PROMPT SPACE? ( "," SPACE? PROMPT SPACE? )* ")" | "[" SPACE? PROMPT SPACE? ( "," SPACE? PROMPT SPACE? )* "]"
     PROMPT: /"{3}/ /.*?/ /"{3}/ | /'{3}/ /.*?/ /'{3}/ | /"(?!"")[^"]*?"/ | /'(?!'')[^']*?'/
     argument: [ARGUMENT]
-    arguments: "(" [ARGUMENT] ("," [ARGUMENT] )* ")" | "[" [ARGUMENT] ("," [ARGUMENT] )* "]"
+    argument_list: "(" [ARGUMENT] ("," [ARGUMENT] )* ")" | "[" [ARGUMENT] ("," [ARGUMENT] )* "]"
     ARGUMENT: /[^()\[\]=,]+/
     keyword_argument: KEYWORD "=" VALUE
-    keyword_arguments: KEYWORD "=" ( "(" [VALUE] ("," [VALUE] )* ")" | "[" [VALUE] ("," [VALUE] )* "]" )
+    keyword_argument_list: KEYWORD "=" ( "(" [VALUE] ("," [VALUE] )* ")" | "[" [VALUE] ("," [VALUE] )* "]" )
     KEYWORD: /[^=,]+/
     VALUE: /[^()\[\]=,]+/
     SPACE: /\s+/
@@ -341,9 +341,9 @@ class Clip_IO(scripts.Script):
                     i = globals["o"].clone()
                 pass
             elif dir.name == "prompt":
-                # prompt(prompt: str, clip_skip: int|None=None, no_padding=True)
+                # ?prompt(prompt: str|list[str], clip_skip: int|list[int]|None=None, no_padding: bool=False, emphasis_mode: str="default", no_normalization: bool=False)
                 prompts: tuple[str]
-                keyword_arguments: dict = {"clip_skip": [None], "no_padding": False, "random": False}
+                keyword_arguments: dict = {"clip_skip": [None], "no_padding": False, "emphasis_mode": "default", "no_normalization": False, "random": False}
                 class prompt_transformer(lark.visitors.Transformer):
                     keyword_position = 0
 
@@ -396,7 +396,27 @@ class Clip_IO(scripts.Script):
                                 else:
                                     raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
                                     pass
-                                keyword_arguments["no_padding"] = [value]
+                                keyword_arguments["no_padding"] = value
+                                self.keyword_position += 1
+                                pass
+                            case 2:
+                                value = token.strip(" ").lower()
+                                if value not in ["default", "empty", "empty_mean", "empty_0th"]:
+                                    value = "default"
+                                keyword_arguments["emphasis_mode"] = value
+                                self.keyword_position += 1
+                                pass
+                            case 3:
+                                if token.strip(" ").lower() == "true":
+                                    value = True
+                                    pass
+                                elif token.strip(" ").lower() == "false":
+                                    value = False
+                                    pass
+                                else:
+                                    raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
+                                    pass
+                                keyword_arguments["no_normalization"] = value
                                 self.keyword_position += 1
                                 pass
                             case _:
@@ -423,20 +443,13 @@ class Clip_IO(scripts.Script):
                                     pass
                                 pass
                             case 1:
-                                keyword_arguments["no_padding"] = []
-                                for token in token:
-                                    if token.strip(" ").lower() == "true":
-                                        value = True
-                                        pass
-                                    elif token.strip(" ").lower() == "false":
-                                        value = False
-                                        pass
-                                    else:
-                                        raise RuntimeError(f'Given argument "{token}" is neither True nor False.')
-                                        pass
-                                    keyword_arguments["no_padding"].append(value)
-                                    self.keyword_position += 1
-                                    pass
+                                raise ValueError('"no_padding" positional argument must not be list.')
+                                pass
+                            case 2:
+                                raise ValueError('"emphasis_mode" positional argument must not be list.')
+                                pass
+                            case 3:
+                                raise ValueError('"no_normalization" positional argument must not be list.')
                                 pass
                             case _:
                                 self.keyword_position += 1
@@ -508,11 +521,12 @@ class Clip_IO(scripts.Script):
                                 pass
                             pass
                         prompt_randomizer().transform(lark.Lark(Clip_IO.syntax_directive_inplace_randomizer, maybe_placeholders=True).parse(prompt))
+                        print("".join(prompt_tmp))
                         prompts_tmp.append("".join(prompt_tmp))
                         pass
                     prompts = tuple(prompts_tmp)
                     pass
-                o = torch.vstack([o, Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(prompts, manual_chunk=bool(keyword_arguments["no_padding"]), clip_skips=[keyword_arguments["clip_skip"]])])
+                o = torch.vstack([o, Clip_IO.FrozenCLIPEmbedderWithCustomWordsBase_forword(prompts, manual_chunk=bool(keyword_arguments["no_padding"]), clip_skips=[keyword_arguments["clip_skip"]], emphasis_mode=keyword_arguments["emphasis_mode"], no_normalization=keyword_arguments["no_normalization"])])
                 i = o.clone()
                 pass
             elif dir.name == "execfile":
@@ -1315,9 +1329,12 @@ class Clip_IO(scripts.Script):
 
         return zo
 
-    def FrozenCLIPEmbedderWithCustomWordsBase_forword(prompt: str | tuple[str, ...], clip = shared.sd_model.cond_stage_model, manual_chunk = False, clip_skips: list[list[int | None]] = [[None]]) -> torch.Tensor:
+    def FrozenCLIPEmbedderWithCustomWordsBase_forword(prompt: str | tuple[str, ...], clip = shared.sd_model.cond_stage_model, manual_chunk = False, clip_skips: list[list[int | None]] = [[None]], emphasis_mode: str = "default", no_normalization: bool = False) -> torch.Tensor:
         batch_chunks, separation_starts_list = Clip_IO.get_chunks(prompt, clip, manual_chunk)
         chunk_count = max([len(x) for x in batch_chunks])
+        if emphasis_mode in ["empty", "empty_mean", "empty_0th"]:
+            batch_chunks_empty = Clip_IO.get_chunks("", clip, manual_chunk)
+            pass
         zs = []
         for i in range(chunk_count):
             batch_chunk = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks]
@@ -1325,18 +1342,57 @@ class Clip_IO(scripts.Script):
             tokens = torch.asarray([x.tokens for x in batch_chunk]).to(devices.device)
             clip.hijack.fixes = [x.fixes for x in batch_chunk]
 
+            if emphasis_mode in ["empty", "empty_mean", "empty_0th"]:
+                batch_chunk_empty = [chunks[i] if i < len(chunks) else clip.empty_chunk() for chunks in batch_chunks_empty]
+                remade_batch_tokens_empty = [x.tokens for x in batch_chunk_empty]
+                tokens_empty = torch.asarray([x.tokens for x in batch_chunk_empty]).to(devices.device)
+                pass
+
             if clip.id_end != clip.id_pad and not manual_chunk:
                 for batch_pos in range(len(remade_batch_tokens)):
                     index = remade_batch_tokens[batch_pos].index(clip.id_end)
                     tokens[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
+                    pass
+                if emphasis_mode in ["empty", "empty_mean", "empty_0th"]:
+                    for batch_pos in range(len(remade_batch_tokens)):
+                        index = remade_batch_tokens_empty[batch_pos].index(clip.id_end)
+                        tokens_empty[batch_pos, index+1:tokens.shape[1]] = clip.id_pad
+                        pass
+                    pass
             
             z = Clip_IO.encode_with_transformers(clip, tokens, i, clip_skips, separation_starts_list) if isinstance(clip, FrozenCLIPEmbedderWithCustomWords) else clip.encode_with_transformers(tokens)
-            if True: # if not no_emphasis:
+            if emphasis_mode in ["empty", "empty_mean", "empty_0th"]:
+                z_empty: torch.Tensor = Clip_IO.encode_with_transformers(clip, tokens_empty, i, clip_skips, separation_starts_list) if isinstance(clip, FrozenCLIPEmbedderWithCustomWords) else clip.encode_with_transformers(tokens)
+                pass
+
+            if emphasis_mode == "empty":
+                batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
+                original_mean = z.mean()
+                z =  (z - z_empty) * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape) + z_empty
+                new_mean = z.mean()
+                z = (z * (original_mean / new_mean)) if not no_normalization else z
+                pass
+            elif emphasis_mode == "empty_mean":
+                batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
+                original_mean = z.mean()
+                z = (z - z_empty.mean(1).expand(z.shape)) * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape) + z_empty.mean(1).expand(z.shape)
+                new_mean = z.mean()
+                z = (z * (original_mean / new_mean)) if not no_normalization else z
+                pass
+            elif emphasis_mode == "empty_0th":
+                batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
+                original_mean = z.mean()
+                z = (z - z_empty[:,0,:].expand(z.shape)) * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape) + z_empty[:,0,:].expand(z.shape)
+                new_mean = z.mean()
+                z = (z * (original_mean / new_mean)) if not no_normalization else z
+                pass
+            else: # emphasis_mode == "default"
                 batch_multipliers = torch.asarray([x.multipliers for x in batch_chunk]).to(devices.device)
                 original_mean = z.mean()
                 z = z * batch_multipliers.reshape(batch_multipliers.shape + (1,)).expand(z.shape)
                 new_mean = z.mean()
-                z = z * (original_mean / new_mean) # z = z * (original_mean / new_mean) if not no_norm else z
+                z = (z * (original_mean / new_mean)) if not no_normalization else z
+                pass
             zs.append(z[0])
         return torch.vstack(zs)
 
